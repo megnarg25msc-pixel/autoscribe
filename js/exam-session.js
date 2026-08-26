@@ -618,68 +618,96 @@ window.AutoScribeExamSession = {
     }, 2000);
   },
 
-  convertNumberWordsToDigits(text) {
-    if (!text) return '';
-    const numMap = {
-      'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
-      'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
-      'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
-      'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
-      'eighteen': '18', 'nineteen': '19', 'twenty': '20', 'thirty': '30',
-      'forty': '40', 'fifty': '50', 'sixty': '60', 'seventy': '70',
-      'eighty': '80', 'ninety': '90', 'hundred': '100'
+  normalizeMathExpression(rawText) {
+    if (!rawText) return '';
+    let str = rawText.trim();
+    if (!str) return '';
+
+    // Strip trailing sentence punctuation
+    str = str.replace(/[,.?!]+$/g, '');
+
+    // 1. Spoken Brackets / Parentheses
+    str = str.replace(/\b(open|start)\s*(brackets?|parenthesis|paren)\b/gi, '(')
+             .replace(/\b(close|end)\s*(brackets?|parenthesis|paren)\b/gi, ')');
+
+    // 2. Spoken Inequalities & Operators
+    str = str.replace(/\b(greater\s+than\s+(or\s+)?equal\s+to|greater\s+equal\s+to)\b/gi, '≥')
+             .replace(/\b(less\s+than\s+(or\s+)?equal\s+to|less\s+equal\s+to)\b/gi, '≤')
+             .replace(/\bgreater\s+than\b/gi, '>')
+             .replace(/\bless\s+than\b/gi, '<')
+             .replace(/\b(is\s+)?equals?\s*(to)?\b/gi, '=')
+             .replace(/\b(is\s+)?equal\s*(to)?\b/gi, '=')
+             .replace(/\b(multiplied\s+by|times)\b/gi, '×')
+             .replace(/\b(divided\s+by|over)\b/gi, '÷')
+             .replace(/\bplus\b/gi, '+')
+             .replace(/\b(minus|subtracted\s+by)\b/gi, '−')
+             .replace(/\b(percent|percentage)\b/gi, '%');
+
+    // 3. Spoken Compound Tens & Teen Numbers
+    const compoundNumbers = {
+      'twenty five': '25', 'twenty four': '24', 'twenty three': '23', 'twenty two': '22', 'twenty one': '21',
+      'thirty five': '35', 'thirty four': '34', 'thirty three': '33', 'thirty two': '32', 'thirty one': '31',
+      'forty five': '45', 'forty four': '44', 'forty three': '43', 'forty two': '42', 'forty one': '41',
+      'fifty five': '55', 'fifty four': '54', 'fifty three': '53', 'fifty two': '52', 'fifty one': '51',
+      'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15',
+      'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19',
+      'twenty': '20', 'thirty': '30', 'forty': '40', 'fifty': '50', 'sixty': '60',
+      'seventy': '70', 'eighty': '80', 'ninety': '90', 'hundred': '100'
     };
 
-    let result = text;
-    for (const [word, digit] of Object.entries(numMap)) {
-      result = result.replace(new RegExp(`\\b${word}\\b`, 'gi'), digit);
+    for (const [phrase, num] of Object.entries(compoundNumbers)) {
+      str = str.replace(new RegExp(`\\b${phrase}\\b`, 'gi'), num);
     }
-    return result;
+
+    // 4. Spoken Single Digits
+    const digitWords = {
+      'zero': '0', 'null': '0',
+      'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
+      'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10'
+    };
+
+    str = str.replace(/\b(zero|null|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi, (m) => digitWords[m.toLowerCase()] || m);
+
+    // 5. Merge Sequence Digits (e.g., "2 5" -> "25", "1 0 0 1" -> "1001")
+    let prev = '';
+    while (prev !== str) {
+      prev = str;
+      str = str.replace(/\b(\d+)\s+(\d+)\b/g, '$1$2');
+    }
+
+    // 6. Exponent & Power Normalization ("x squared" -> "x²", "a squared" -> "a²", "b squared" -> "b²", "c squared" -> "c²")
+    str = str.replace(/\b([a-zA-Z0-9\)])\s*(squared?|square)\b/gi, '$1²')
+             .replace(/\b([a-zA-Z0-9\)])\s*cubed?\b/gi, '$1³')
+             .replace(/\b(to\s+the\s+power\s+of|raised\s+to\s+the\s+power\s+of|raised\s+to|to\s+the\s+power|power)\b/gi, '^');
+
+    // 7. Coefficient & Variable Joining (e.g., "5 x" -> "5x", "2 x²" -> "2x²", "4 x" -> "4x")
+    str = str.replace(/\b(\d+)\s+([a-zA-Z][²³]?)\b/gi, '$1$2');
+
+    // 8. Clean spaces around operators & brackets
+    str = str.replace(/\s*([+−×÷=><≥≤^])\s*/g, ' $1 ')
+             .replace(/\(\s+/g, '(')
+             .replace(/\s+\)/g, ')')
+             .replace(/\s+/g, ' ')
+             .trim();
+
+    return str;
+  },
+
+  convertNumberWordsToDigits(text) {
+    return this.normalizeMathExpression(text);
   },
 
   formatSpokenDictation(rawText, examId = '') {
     if (!rawText) return '';
     let text = rawText.trim();
+    const isMath = (examId === 'exam_math') || 
+                   (this.activeExam && (this.activeExam.id === 'exam_math' || (this.activeExam.title && this.activeExam.title.toLowerCase().includes('math')))) ||
+                   /\b(square|squared|plus|minus|equals|equal\s+to|times|divided|open\s+bracket|close\s+bracket)\b/i.test(text);
 
-    const isEquation = /\b(square|squared|plus|minus|equals|equal\s+to|times|divided)\b/i.test(text);
-
-    if (isEquation) {
-      // Clean trailing standalone punctuation for math equations
-      text = text.replace(/[,.?!]+$/g, '');
-
-      // 1. Spoken number words conversion ("zero" -> "0", "two" -> "2", etc.)
-      text = this.convertNumberWordsToDigits(text);
-
-      // 2. Exponent / power conversion ("x square" / "x squared" -> "x²")
-      text = text.replace(/\b([a-zA-Z])\s+squared?\b/gi, '$1²')
-                 .replace(/\b([a-zA-Z])\s+square\b/gi, '$1²')
-                 .replace(/\b([a-zA-Z])\s+\^2\b/gi, '$1²');
-
-      // 3. Operators conversion
-      text = text.replace(/\b(is\s+)?equals?\s+to\b/gi, '=')
-                 .replace(/\b(is\s+)?equal\s+to\b/gi, '=')
-                 .replace(/\bequals?\b/gi, '=')
-                 .replace(/\bequal\b/gi, '=')
-                 .replace(/\bplus\b/gi, '+')
-                 .replace(/\bminus\b/gi, '-')
-                 .replace(/\b(multiplied\s+by|times)\b/gi, '×')
-                 .replace(/\bdivided\s+by\b/gi, '÷');
-
-      // 4. Join coefficients to variables (e.g., "5 x" -> "5x", "3 x²" -> "3x²", "m a" -> "ma")
-      text = text.replace(/\b(\d+)\s+([a-zA-Z]²?)\b/gi, '$1$2')
-                 .replace(/\b([a-zA-Z])\s+([a-zA-Z])\b/g, '$1$2');
-
-      // 5. Clean up spaces around math operators (=, +, -, ×, ÷)
-      text = text.replace(/\s*([=+\-×÷])\s*/g, ' $1 ');
-
-      // 6. Normalize multiple whitespace into single spaces
-      text = text.replace(/\s+/g, ' ').trim();
-    } else {
-      // For general prose (English, Biology, CS explanations, etc.): preserve actual spoken words & punctuation accurately
-      text = text.replace(/\s+/g, ' ').trim();
+    if (isMath) {
+      return this.normalizeMathExpression(text);
     }
-
-    return text;
+    return text.replace(/\s+/g, ' ').trim();
   },
 
   startQuestionFlow() {
@@ -691,7 +719,40 @@ window.AutoScribeExamSession = {
     // Immediately update DOM before speaking
     this.renderQuestion();
 
-    // Strict State Reset for New Question
+    // Check if Mathematics Exam
+    const isMath = (this.activeExam.id === 'exam_math') || 
+                   (this.activeExam.title && this.activeExam.title.toLowerCase().includes('math'));
+
+    if (isMath) {
+      // Reset State for Mathematics Question Flow
+      this.reviewState = 'IDLE';
+      this.answerMode = true;
+      this.waitingForAnswer = true;
+      this.questionChoiceMode = false;
+      this.questionState = 'RECORDING_ANSWER';
+      this.mathState = 'MATH_RECORDING_ANSWER';
+
+      const sectionInfo = question.section ? `${question.section}. ` : '';
+      const qNumText = `Question ${this.currentIndex + 1} of ${this.activeExam.questions.length}.`;
+      const fullText = `${qNumText} ${sectionInfo}${question.text}`;
+
+      // Read COMPLETE question TWICE, followed by prompt "Now, please say your answer."
+      const mathPrompt = `${fullText}. ... ${question.text}. ... Now, please say your answer.`;
+
+      const saveStatus = document.getElementById('saveStatus');
+      if (saveStatus) saveStatus.textContent = `🎙️ MATH MODE: Dictating answer for Question ${this.currentIndex + 1}...`;
+
+      AutoScribeSpeech.speak(mathPrompt, () => {
+        // ONLY AFTER prompt finishes speaking completely, start microphone listening!
+        AutoScribeSpeech.startListening(
+          (rawText, isFinal) => this.handleSubjectVoiceInput(rawText, isFinal),
+          (cmd, rawText) => this.handleSubjectVoiceInput(rawText, true)
+        );
+      });
+      return;
+    }
+
+    // Non-Mathematics Subjects logic
     this.reviewState = 'IDLE';
     this.answerMode = false;
     this.waitingForAnswer = false;
@@ -702,16 +763,7 @@ window.AutoScribeExamSession = {
     const sectionInfo = question.section ? `${question.section}. ` : '';
     const qNumText = `Question ${this.currentIndex + 1} of ${this.activeExam.questions.length}.`;
     const fullText = `${qNumText} ${sectionInfo}${question.text}`;
-    
-    let promptText = '';
-    if (this.activeExam.id === 'exam_math') {
-      // Read Mathematics question TWICE clearly
-      const doubleReadText = `${fullText}. ... ${fullText}.`;
-      promptText = `${doubleReadText} Can I read the question once again or will you write? Please say read again or I will write.`;
-    } else {
-      // Read subject question ONCE clearly
-      promptText = `${fullText}. Can I read the question once again or will you write? Please say read again or I will write.`;
-    }
+    const promptText = `${fullText}. Can I read the question once again or will you write? Please say read again or I will write.`;
 
     const saveStatus = document.getElementById('saveStatus');
     if (saveStatus) saveStatus.textContent = `Voice Assistant: ${this.activeExam.title} Question ${this.currentIndex + 1} ready...`;
@@ -723,6 +775,7 @@ window.AutoScribeExamSession = {
       );
     });
   },
+
 
   startMathQuestionFlow() {
     this.startQuestionFlow();
