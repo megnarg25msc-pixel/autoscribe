@@ -62,7 +62,7 @@ window.AutoScribeSpeech = {
     this.recognition.onresult = (event) => {
       // Discard recognition results while TTS is speaking to prevent loopback / self-listening
       if (this.speechActive || (this.synth && this.synth.speaking)) {
-        console.log("AutoScribe: Discarded STT input during active TTS playback.");
+        console.log("[AutoScribe SpeechEngine] Discarded STT input during active TTS playback.");
         return;
       }
 
@@ -76,15 +76,23 @@ window.AutoScribeSpeech = {
           interimTranscript += event.results[i][0].transcript;
         }
       }
+
+      if (interimTranscript) {
+        console.log("[AutoScribe SpeechEngine] interim transcript:", interimTranscript);
+      }
+      if (finalTranscript) {
+        console.log("[AutoScribe SpeechEngine] final transcript:", finalTranscript);
+      }
+
       const heardText = (finalTranscript || interimTranscript).trim();
       if (!heardText) return;
 
       const isLoginPage = window.location.pathname.endsWith('login.html') || window.location.href.includes('login.html');
 
       // Filter out TTS speaker echo / system prompt loopback
-      const isSpeakerEcho = /\b(can i read the question|once again or will you write|please say read again|if you want to change it say change|otherwise say no changes|can i read your answer|can i start this|exam or move to the next subject)\b/i.test(heardText);
+      const isSpeakerEcho = /\b(can i read the question|once again or will you write|please say read again|please say your answer|if you want to change it say change|otherwise say no changes|can i read your answer|can i start this|exam or move to the next subject)\b/i.test(heardText);
       if (isSpeakerEcho) {
-        console.warn("AutoScribe: Ignored speaker echo loopback:", heardText);
+        console.warn("[AutoScribe SpeechEngine] Ignored speaker echo loopback:", heardText);
         return;
       }
 
@@ -92,7 +100,7 @@ window.AutoScribeSpeech = {
 
       // Only parse global/navigation or exam voice commands when NOT on login page
       if (!isLoginPage) {
-        const currentState = window.AutoScribeExamSession ? (window.AutoScribeExamSession.questionState || 'IDLE') : 'IDLE';
+        const currentState = window.AutoScribeExamSession ? (window.AutoScribeExamSession.questionState || window.AutoScribeExamSession.mathState || 'IDLE') : 'IDLE';
 
         const isAnswerMode = window.AutoScribeExamSession && (
           window.AutoScribeExamSession.answerMode || 
@@ -117,26 +125,26 @@ window.AutoScribeSpeech = {
         }
       }
 
-      if (this.onTranscriptCallback && !this.speechActive) {
+      if (this.onTranscriptCallback) {
         if (this.isRollMode) {
           if (finalTranscript) {
             this.stopListening();
             const cleanedRoll = this.normalizeRollNumber(finalTranscript);
-            console.log("AutoScribe Roll Number Captured (Final):", cleanedRoll);
+            console.log("[AutoScribe SpeechEngine] Roll Number Captured (Final):", cleanedRoll);
             this.onTranscriptCallback(cleanedRoll, true);
           }
         } else {
           if (finalTranscript) {
-            const cleanedText = this.normalizeText(finalTranscript);
-            console.log("AutoScribe Dictation Captured (Final):", cleanedText);
-            this.onTranscriptCallback(cleanedText, true);
+            console.log("[AutoScribe SpeechEngine] Dispatching final transcript to onTranscriptCallback:", finalTranscript);
+            this.onTranscriptCallback(finalTranscript, true);
           } else if (interimTranscript) {
-            const cleanedInterim = this.normalizeText(interimTranscript);
-            this.onTranscriptCallback(cleanedInterim, false);
+            console.log("[AutoScribe SpeechEngine] Dispatching interim transcript to onTranscriptCallback:", interimTranscript);
+            this.onTranscriptCallback(interimTranscript, false);
           }
         }
       }     
     };
+
 
     this.recognition.onerror = (event) => {
       console.warn("AutoScribe Speech Warning:", event.error);
@@ -478,8 +486,10 @@ window.AutoScribeSpeech = {
       try {
         if (this.isListening && !this.speechActive && this.recognition) {
           this.recognition.start();
+          console.log("[AutoScribe SpeechEngine] recognition started. Lang:", this.recognition.lang);
           this.playChime('listen');
           const statusDot = document.getElementById('statusDot');
+
           if (statusDot) statusDot.classList.add('active');
         }
       } catch (e) {

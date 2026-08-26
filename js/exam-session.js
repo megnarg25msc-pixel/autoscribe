@@ -853,21 +853,37 @@ window.AutoScribeExamSession = {
       return;
     }
 
-    // State 2: Capturing spoken answer (WRITE MODE)
+    // State 2: Capturing spoken answer (WRITE MODE / MATH RECORDING)
     if (this.answerMode || this.questionState === 'RECORDING_ANSWER' || this.mathState === 'MATH_RECORDING_ANSWER') {
+      const isMath = (this.activeExam && (this.activeExam.id === 'exam_math' || (this.activeExam.title && this.activeExam.title.toLowerCase().includes('math'))));
       const formattedAns = this.formatSpokenDictation(text, this.activeExam ? this.activeExam.id : '');
+      
+      console.log("[AutoScribe ExamSession] current exam state:", currentState);
+      console.log(`[AutoScribe ExamSession] raw transcript (isFinal: ${isFinal}): "${text}"`);
+      console.log("[AutoScribe ExamSession] normalized math expression:", formattedAns);
+
       const answerInput = document.getElementById('answerInput');
+      console.log("[AutoScribe ExamSession] answerInput element found:", !!answerInput);
+
       if (answerInput) {
         answerInput.value = formattedAns;
+        console.log("[AutoScribe ExamSession] answerInput value after update:", answerInput.value);
       }
       this.saveCurrentAnswerSilently();
 
-      // Real-time interim updates during dictation
+      // For Math Mode: Keep continuous dictation active without TTS cutting off the student mid-sentence
+      if (isMath) {
+        const saveStatus = document.getElementById('saveStatus');
+        if (saveStatus) saveStatus.textContent = `🎙️ MATH ANSWER: ${formattedAns}`;
+        return;
+      }
+
+      // Real-time interim updates during general non-math dictation
       if (isFinal === false) {
         return;
       }
 
-      // Final dictation captured -> transition to answer confirmation phase
+      // Final dictation captured for general subjects -> transition to answer confirmation phase
       this.questionState = 'AWAITING_CONFIRMATION';
       this.mathState = 'MATH_AWAITING_CONFIRMATION';
       const readbackMsg = `Your recorded answer is: ${formattedAns}. Can I read your answer? If you want to change it, say change. Otherwise say no changes.`;
@@ -880,6 +896,7 @@ window.AutoScribeExamSession = {
       });
       return;
     }
+
 
     // State 3: Confirming or Changing Answer
     if (this.questionState === 'AWAITING_CONFIRMATION' || this.mathState === 'MATH_AWAITING_CONFIRMATION') {
