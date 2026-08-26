@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Submission Confirmation - AutoScribe</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+  <header class="app-header" role="banner">
+    <a href="index.html" class="brand-logo">
+      <div class="brand-icon" aria-hidden="true">A</div>
+      <span>AutoScribe</span>
+    </a>
+  </header>
+
+  <main class="main-content" role="main" style="max-width: 700px; margin-top: 3rem;">
+    <div class="card" style="text-align: center; padding: 3rem 2rem; border: 3px solid var(--accent-green);">
+      <div style="font-size: 4rem; margin-bottom: 1rem;">🎉</div>
+      <h1 class="card-title" style="font-size: 2.2rem; color: var(--accent-green);">Examination Successfully Submitted!</h1>
+      <p style="font-size: 1.25rem; color: var(--text-secondary); margin-bottom: 2rem;">
+        Your answers have been timestamped, encrypted, and saved securely to the database.
+      </p>
+
+      <div id="receiptContainer" style="background: rgba(0,0,0,0.4); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border-color); text-align: left; margin-bottom: 2rem; font-family: var(--font-mono);">
+        <p><strong>Submission ID:</strong> <span id="subId" style="color: var(--accent-gold);">SUB-1029384</span></p>
+        <p><strong>Student Details:</strong> <span id="subStudent">Alex Johnson (STD-1001)</span></p>
+        <p><strong>Submission Timestamp:</strong> <span id="subTime">2026-08-13 14:00:00</span></p>
+        <p><strong>Status:</strong> <span style="color: var(--accent-green); font-weight: 700;">Verified & Locked</span></p>
+      </div>
+
+      <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <a href="dashboard.html" class="btn btn-primary btn-large">📋 Return to Dashboard</a>
+        <a href="index.html" class="btn btn-secondary btn-large">🏠 Main Menu</a>
+        <a href="admin.html" class="btn btn-secondary btn-large">👨‍🏫 Teacher Portal</a>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/firebase-config.js"></script>
+  <script src="js/speech-engine.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      AutoScribeSpeech.init();
+
+      const subData = sessionStorage.getItem('autoscribe_last_submission');
+      if (subData) {
+        try {
+          const sub = JSON.parse(subData);
+          if (sub.submissionId) document.getElementById('subId').textContent = sub.submissionId;
+          if (sub.studentName || sub.studentId) {
+            document.getElementById('subStudent').textContent = `${sub.studentName || 'Student'} (${sub.studentId || ''})`;
+          }
+          if (sub.submittedAt) document.getElementById('subTime').textContent = new Date(sub.submittedAt).toLocaleString();
+        } catch (e) {}
+      } else {
+        const user = AutoScribeApp.currentUser || JSON.parse(sessionStorage.getItem('autoscribe_user') || localStorage.getItem('autoscribe_user') || '{}');
+        const name = user.name || user.studentName || 'Student';
+        const roll = user.rollNumber || user.studentId || '';
+        if (name || roll) {
+          document.getElementById('subStudent').textContent = `${name}${roll ? ` (${roll})` : ''}`;
+        }
+      }
+
+      setTimeout(() => {
+        AutoScribeSpeech.speak("Congratulations! Your examination has been successfully submitted and saved securely. You may now return to the dashboard.");
+      }, 500);
+    });
+  </script>
+</body>
+</html>

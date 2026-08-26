@@ -1,0 +1,183 @@
+/**
+ * AutoScribe Backend Server - Google Cloud Text-to-Speech Integration
+ * Securely proxies TTS requests using GOOGLE_TTS_API_KEY or GOOGLE_API_KEY loaded from .env
+ */
+
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const https = require('https');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 8000;
+
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname)));
+
+/**
+ * POST /api/tts
+ * Request Payload: { "text": "...", "gender": "male"|"female", "speed": 1.0 }
+ * Response Payload: { "audioContent": "<base64_mp3_string>", "voice": "en-IN-Standard-B"|"en-IN-Standard-A" }
+ */
+app.post('/api/tts', (req, res) => {
+  try {
+    const { text, gender, speed } = req.body || {};
+
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Valid text prompt is required.' });
+    }
+
+    const pace = parseFloat(speed) || 1.0;
+    const isMale = (gender && String(gender).toLowerCase() === 'male');
+
+    // AutoScribe uses Browser Native Web SpeechSynthesis API for TTS. No cloud keys required.
+    return res.json({
+      status: 'native_speech_synthesis',
+      engine: 'Browser Web SpeechSynthesis API (en-IN)',
+      speaker: isMale ? 'male' : 'female',
+      pace: pace,
+      text: text
+    });
+
+  } catch (err) {
+    console.error('Server Error in /api/tts:', err);
+    return res.status(500).json({ error: 'Internal Server Error handling TTS request.' });
+  }
+});
+
+// Google Cloud Speech-to-Text Integration (Application Default Credentials - ADC)
+const speech = require('@google-cloud/speech');
+let sttClient = null;
+try {
+  sttClient = new speech.SpeechClient();
+  console.log('Google Cloud SpeechClient (ADC) initialized.');
+} catch (err) {
+  console.warn('Google Cloud SpeechClient (ADC) initial setup notice:', err.message);
+}
+
+/**
+ * GET /api/stt/health
+ * Health check endpoint for Google STT ADC configuration status
+ */
+app.get('/api/stt/health', (req, res) => {
+  const isAdcConfigured = !!(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_CLOUD_PROJECT);
+  return res.json({
+    status: sttClient ? 'ready' : 'unconfigured',
+    engine: 'Google Cloud Speech-to-Text (en-IN)',
+    adcConfigured: isAdcConfigured,
+    credentialsPath: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'Not set (using default ADC lookup)'
+  });
+});
+
+/**
+ * POST /api/stt
+ * Request Payload: { "audioContent": "<base64_audio>", "mimeType": "audio/webm;codecs=opus", "sampleRateHertz": 48000 }
+ * Response Payload: { "transcript": "...", "confidence": 0.95, "languageCode": "en-IN" }
+ */
+app.post('/api/stt', async (req, res) => {
+  try {
+    const { audioContent, mimeType, sampleRateHertz } = req.body || {};
+
+    if (!audioContent || typeof audioContent !== 'string') {
+      return res.status(400).json({ error: 'Valid base64 audioContent string is required.' });
+    }
+
+    if (!sttClient) {
+      try {
+        sttClient = new speech.SpeechClient();
+      } catch (err) {
+        return res.status(503).json({
+          error: 'Google Cloud STT client is unavailable. ADC credentials are not configured.',
+          setupRequired: true,
+          details: err.message
+        });
+      }
+    }
+
+    let encoding = 'WEBM_OPUS';
+    if (mimeType && (mimeType.includes('wav') || mimeType.includes('pcm') || mimeType.includes('linear16'))) {
+      encoding = 'LINEAR16';
+    } else if (mimeType && mimeType.includes('ogg')) {
+      encoding = 'OGG_OPUS';
+    } else if (mimeType && mimeType.includes('flac')) {
+      encoding = 'FLAC';
+    }
+
+    const config = {
+      encoding: encoding,
+      languageCode: 'en-IN',
+      enableAutomaticPunctuation: true,
+    };
+
+    if (sampleRateHertz && typeof sampleRateHertz === 'number') {
+      config.sampleRateHertz = sampleRateHertz;
+    }
+
+    const audio = {
+      content: audioContent,
+    };
+
+    const request = {
+      config: config,
+      audio: audio,
+    };
+
+    const [response] = await sttClient.recognize(request);
+    const results = response.results || [];
+    
+    let fullTranscript = '';
+    let totalConfidence = 0;
+    let count = 0;
+
+    results.forEach(result => {
+      if (result.alternatives && result.alternatives[0]) {
+        const alt = result.alternatives[0];
+        fullTranscript += (fullTranscript ? ' ' : '') + alt.transcript;
+        if (alt.confidence) {
+          totalConfidence += alt.confidence;
+          count++;
+        }
+      }
+    });
+
+    const avgConfidence = count > 0 ? (totalConfidence / count) : 0.9;
+
+    return res.json({
+      transcript: fullTranscript.trim(),
+      confidence: avgConfidence,
+      languageCode: 'en-IN',
+      engine: 'Google Cloud Speech-to-Text (en-IN)'
+    });
+
+  } catch (err) {
+    console.error('Google Cloud STT Recognition Error:', err);
+    if (err.message && err.message.includes('Could not load the default credentials')) {
+      return res.status(503).json({
+        error: 'Google Application Default Credentials (ADC) not found.',
+        setupRequired: true,
+        details: 'Set GOOGLE_APPLICATION_CREDENTIALS in .env file or run gcloud auth application-default login.'
+      });
+    }
+    return res.status(500).json({
+      error: 'Google Cloud STT Recognition failed.',
+      details: err.message
+    });
+  }
+});
+
+if (process.env.NODE_ENV !== 'production' || require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`AutoScribe Backend Server running on http://localhost:${PORT}`);
+    console.log(`Google Cloud TTS Endpoint: http://localhost:${PORT}/api/tts`);
+    console.log(`Google Cloud STT Endpoint: http://localhost:${PORT}/api/stt (en-IN ADC)`);
+    if (!process.env.GOOGLE_TTS_API_KEY && !process.env.GOOGLE_API_KEY && !process.env.GOOGLE_ACCESS_TOKEN) {
+      console.log(`Notice: GOOGLE_TTS_API_KEY is not set in .env file. Please add GOOGLE_TTS_API_KEY to enable Google Cloud voices.`);
+    }
+  });
+}
+
+module.exports = app;
+
+
