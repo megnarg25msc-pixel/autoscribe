@@ -14,11 +14,34 @@ const PORT = process.env.PORT || 8000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+const rootDir = process.cwd();
+const staticDir = path.resolve(__dirname);
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
+app.use(express.static(staticDir));
+if (rootDir !== staticDir) {
+  app.use(express.static(rootDir));
+}
+
+// Page Routes for Local and Vercel Deployment
+const sendPage = (pageName, res) => {
+  const fileInDir = path.join(staticDir, pageName);
+  const fileInCwd = path.join(rootDir, pageName);
+  const fs = require('fs');
+  if (fs.existsSync(fileInDir)) {
+    return res.sendFile(fileInDir);
+  } else if (fs.existsSync(fileInCwd)) {
+    return res.sendFile(fileInCwd);
+  }
+  return res.status(404).send(`Page ${pageName} not found.`);
+};
+
+app.get(['/', '/index', '/index.html'], (req, res) => sendPage('index.html', res));
+app.get(['/login', '/login.html'], (req, res) => sendPage('login.html', res));
+app.get(['/dashboard', '/dashboard.html'], (req, res) => sendPage('dashboard.html', res));
+app.get(['/exam', '/exam.html'], (req, res) => sendPage('exam.html', res));
+app.get(['/admin', '/admin.html'], (req, res) => sendPage('admin.html', res));
+app.get(['/confirmation', '/confirmation.html'], (req, res) => sendPage('confirmation.html', res));
+
 
 
 /**
