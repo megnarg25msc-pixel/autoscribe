@@ -36,42 +36,47 @@ const testCases = [
   {
     name: 'Example 1: Quadratic Expression',
     input: 'x squared plus five x equals twenty five',
-    expected: 'x² + 5x = 25'
+    expected: 'x²+5x=25'
   },
   {
     name: 'Example 2: Arithmetic Operations',
     input: 'ten divided by two multiplied by three',
-    expected: '10 ÷ 2 × 3'
+    expected: '10÷2×3'
   },
   {
     name: 'Example 3: Linear Equation',
     input: 'two x plus three equals eleven',
-    expected: '2x + 3 = 11'
+    expected: '2x+3=11'
   },
   {
     name: 'Example 4: Quadratic Equation with Subtraction',
     input: 'x squared minus four x plus four equals zero',
-    expected: 'x² − 4x + 4 = 0'
+    expected: 'x²−4x+4=0'
   },
   {
     name: 'Example 5: Parentheses / Brackets',
     input: 'open bracket x plus two close bracket multiplied by three',
-    expected: '(x + 2) × 3'
+    expected: '(x+2)×3'
   },
   {
     name: 'Example 6: Pythagorean Theorem',
     input: 'a squared plus b squared equals c squared',
-    expected: 'a² + b² = c²'
+    expected: 'a²+b²=c²'
   },
   {
-    name: 'Extra: Digit sequence merging',
+    name: 'Example 7: Complex Polynomial',
+    input: 'five x squared plus three x minus two equals zero',
+    expected: '5x²+3x−2=0'
+  },
+  {
+    name: 'Example 8: Digit sequence merging',
     input: 'two five',
     expected: '25'
   },
   {
-    name: 'Extra: Inequalities',
+    name: 'Example 9: Inequalities',
     input: 'x plus five greater than or equal to ten',
-    expected: 'x + 5 ≥ 10'
+    expected: 'x+5≥10'
   }
 ];
 

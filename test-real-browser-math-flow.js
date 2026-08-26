@@ -99,7 +99,7 @@ global.speechSynthesis = {
     // Simulate TTS completion after prompt
     setTimeout(() => {
       if (utterance.onend) utterance.onend();
-    }, 100);
+    }, 50);
   },
   getVoices: () => []
 };
@@ -126,46 +126,54 @@ require('./js/speech-engine.js');
 require('./js/exam-session.js');
 
 async function testBrowserMathFlow() {
-  console.log("=== TESTING REAL BROWSER EXECUTION PATH FOR MATHEMATICS ===\n");
+  console.log("=== TESTING REAL BROWSER SEQUENTIAL TTS & CUMULATIVE MATH BUFFER ===\n");
 
   // Initialize Exam Session (Simulates DOMContentLoaded in browser)
   await AutoScribeExamSession.initSession();
 
-  // Wait for 400ms initial trigger + 100ms TTS completion + 400ms squelch buffer
-  console.log("Waiting for question prompt TTS to finish and microphone to activate...");
-  await new Promise(resolve => setTimeout(resolve, 1200));
+  // Wait for 3 sequential TTS calls to complete: Question Read 1 -> Question Read 2 -> Answer Prompt -> Microphone Start
+  console.log("Waiting for 3-phase sequential TTS to finish and microphone to activate...");
+  await new Promise(resolve => setTimeout(resolve, 2000));
 
-  console.log("\n--- SIMULATING STUDENT VOICE DICTATION ---");
-  // Student speaks: "x squared plus five x equals twenty five"
-  const studentSpokenInput = "x squared plus five x equals twenty five";
-  console.log(`Student says: "${studentSpokenInput}"\n`);
+  console.log("\n--- TEST 1: MULTI-PAUSE CUMULATIVE DICTATION ---");
 
-  // Simulate SpeechRecognition onresult event in browser
-  const mockEvent = {
+  // Segment 1: Student says "x cube"
+  console.log('Student Segment 1: "x cube"');
+  AutoScribeSpeech.recognition.onresult({
     resultIndex: 0,
-    results: [
-      [
-        { transcript: studentSpokenInput }
-      ]
-    ]
-  };
-  mockEvent.results[0].isFinal = true;
-
-  // Trigger speech recognition result callback
-  AutoScribeSpeech.recognition.onresult(mockEvent);
-
-  console.log("\n--- VERIFYING ANSWER BOX DISPLAY IN BROWSER ---");
-  const actualValueInTextarea = answerInputTextarea.value;
-  console.log(`Textarea #answerInput.value in DOM: "${actualValueInTextarea}"`);
-
-  const expectedValue = "x² + 5x = 25";
-
-  if (actualValueInTextarea === expectedValue) {
-    console.log("\n✅ SUCCESS: Spoken answer successfully populated #answerInput in DOM as:", actualValueInTextarea);
-  } else {
-    console.error("\n❌ FAILURE: Expected #answerInput to be", expectedValue, "but got:", actualValueInTextarea);
+    results: [ Object.assign([{ transcript: "x cube" }], { isFinal: true }) ]
+  });
+  console.log(`Buffer after Segment 1: "${answerInputTextarea.value}" (Expected: "x³")`);
+  if (answerInputTextarea.value !== "x³") {
+    console.error("❌ TEST 1 FAILED: Expected x³ but got", answerInputTextarea.value);
     process.exit(1);
   }
+
+  // Segment 2: Student pauses, then says "plus three"
+  console.log('\nStudent Segment 2: "plus three"');
+  AutoScribeSpeech.recognition.onresult({
+    resultIndex: 0,
+    results: [ Object.assign([{ transcript: "plus three" }], { isFinal: true }) ]
+  });
+  console.log(`Buffer after Segment 2: "${answerInputTextarea.value}" (Expected: "x³+3")`);
+  if (answerInputTextarea.value !== "x³+3") {
+    console.error("❌ TEST 1 FAILED: Expected x³+3 but got", answerInputTextarea.value);
+    process.exit(1);
+  }
+
+  // Segment 3: Student pauses, then says "equals ten"
+  console.log('\nStudent Segment 3: "equals ten"');
+  AutoScribeSpeech.recognition.onresult({
+    resultIndex: 0,
+    results: [ Object.assign([{ transcript: "equals ten" }], { isFinal: true }) ]
+  });
+  console.log(`Buffer after Segment 3: "${answerInputTextarea.value}" (Expected: "x³+3=10")`);
+  if (answerInputTextarea.value !== "x³+3=10") {
+    console.error("❌ TEST 1 FAILED: Expected x³+3=10 but got", answerInputTextarea.value);
+    process.exit(1);
+  }
+
+  console.log("\n✅ SUCCESS: Multi-pause cumulative dictation verified perfectly!");
 }
 
 testBrowserMathFlow();

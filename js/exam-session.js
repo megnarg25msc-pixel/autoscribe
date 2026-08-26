@@ -618,9 +618,9 @@ window.AutoScribeExamSession = {
     }, 2000);
   },
 
-  normalizeMathExpression(rawText) {
+  normalizeMathSegment(rawText) {
     if (!rawText) return '';
-    let str = rawText.trim();
+    let str = String(rawText).trim();
     if (!str) return '';
 
     // Strip trailing sentence punctuation
@@ -675,39 +675,120 @@ window.AutoScribeExamSession = {
       str = str.replace(/\b(\d+)\s+(\d+)\b/g, '$1$2');
     }
 
-    // 6. Exponent & Power Normalization ("x squared" -> "x²", "a squared" -> "a²", "b squared" -> "b²", "c squared" -> "c²")
-    str = str.replace(/\b([a-zA-Z0-9\)])\s*(squared?|square)\b/gi, '$1²')
-             .replace(/\b([a-zA-Z0-9\)])\s*cubed?\b/gi, '$1³')
+    // 6. Exponent & Power Normalization ("x cube" -> "x³", "x squared" -> "x²")
+    str = str.replace(/\b([a-zA-Z0-9\)])\s*(cubed?|cube)\b/gi, '$1³')
+             .replace(/\b([a-zA-Z0-9\)])\s*(squared?|square)\b/gi, '$1²')
              .replace(/\b(to\s+the\s+power\s+of|raised\s+to\s+the\s+power\s+of|raised\s+to|to\s+the\s+power|power)\b/gi, '^');
 
     // 7. Coefficient & Variable Joining (e.g., "5 x" -> "5x", "2 x²" -> "2x²", "4 x" -> "4x")
     str = str.replace(/\b(\d+)\s+([a-zA-Z][²³]?)\b/gi, '$1$2');
 
     // 8. Clean spaces around operators & brackets
-    str = str.replace(/\s*([+−×÷=><≥≤^])\s*/g, ' $1 ')
+    str = str.replace(/\s*([+−×÷=><≥≤^])\s*/g, '$1')
              .replace(/\(\s+/g, '(')
              .replace(/\s+\)/g, ')')
-             .replace(/\s+/g, ' ')
+             .replace(/\s+/g, '')
              .trim();
 
     return str;
   },
 
+  mergeMathBuffer(existingBuffer, newSegment) {
+    if (!existingBuffer) return newSegment || '';
+    if (!newSegment) return existingBuffer;
+
+    let buf = String(existingBuffer).trim();
+    let seg = String(newSegment).trim();
+
+    if (!buf) return seg;
+    if (!seg) return buf;
+
+    // Prevent duplicate appending if seg is already at the end of buf
+    if (buf.endsWith(seg)) {
+      return buf;
+    }
+
+    // If new segment starts with an operator (+, −, ×, ÷, =, >, <, ≥, ≤, ^), attach directly
+    if (/^[+−×÷=><≥≤^]/.test(seg)) {
+      return buf + seg;
+    }
+
+    // If existing buffer ends with an operator, attach directly
+    if (/[+−×÷=><≥≤^]$/.test(buf)) {
+      return buf + seg;
+    }
+
+    // If existing buffer ends with a digit/letter and new segment starts with variable/digit
+    if (/\d$/.test(buf) && /^[a-zA-Z]/.test(seg)) {
+      return buf + seg;
+    }
+
+    return buf + seg;
+  },
+
+  normalizeMathExpression(rawText) {
+    return this.normalizeMathSegment(rawText);
+  },
+
   convertNumberWordsToDigits(text) {
-    return this.normalizeMathExpression(text);
+    return this.normalizeMathSegment(text);
   },
 
   formatSpokenDictation(rawText, examId = '') {
     if (!rawText) return '';
     let text = rawText.trim();
     const isMath = (examId === 'exam_math') || 
-                   (this.activeExam && (this.activeExam.id === 'exam_math' || (this.activeExam.title && this.activeExam.title.toLowerCase().includes('math')))) ||
-                   /\b(square|squared|plus|minus|equals|equal\s+to|times|divided|open\s+bracket|close\s+bracket)\b/i.test(text);
+                   (this.activeExam && (this.activeExam.id === 'exam_math' || (this.activeExam.title && this.activeExam.title.toLowerCase().includes('math'))));
 
     if (isMath) {
-      return this.normalizeMathExpression(text);
+      return this.normalizeMathSegment(text);
     }
     return text.replace(/\s+/g, ' ').trim();
+  },
+
+  handleMathVoiceDictation(rawText, isFinal = false) {
+    if (!rawText || !String(rawText).trim()) return;
+    const text = String(rawText).trim();
+    const newSeg = this.normalizeMathSegment(text);
+
+    const question = this.activeExam ? this.activeExam.questions[this.currentIndex] : null;
+    const qId = question ? question.id : 'default';
+
+    if (typeof this.mathAnswerBuffer !== 'string') {
+      this.mathAnswerBuffer = this.answers[qId] || '';
+    }
+
+    if (!isFinal) {
+      console.log("[AutoScribe Math] Interim transcript:", text);
+      const preview = this.mergeMathBuffer(this.mathAnswerBuffer, newSeg);
+      console.log("[AutoScribe Math] Existing math buffer:", this.mathAnswerBuffer);
+      console.log("[AutoScribe Math] New normalized segment:", newSeg);
+      console.log("[AutoScribe Math] answerInput value:", preview);
+
+      const answerInput = document.getElementById('answerInput');
+      if (answerInput) {
+        answerInput.value = preview;
+      }
+      return;
+    }
+
+    console.log("[AutoScribe Math] Final transcript:", text);
+    console.log("[AutoScribe Math] Existing math buffer:", this.mathAnswerBuffer);
+    console.log("[AutoScribe Math] New normalized segment:", newSeg);
+
+    this.mathAnswerBuffer = this.mergeMathBuffer(this.mathAnswerBuffer, newSeg);
+    console.log("[AutoScribe Math] Updated math buffer:", this.mathAnswerBuffer);
+
+    const answerInput = document.getElementById('answerInput');
+    if (answerInput) {
+      answerInput.value = this.mathAnswerBuffer;
+      console.log("[AutoScribe Math] answerInput value:", answerInput.value);
+    }
+
+    if (qId) {
+      this.answers[qId] = this.mathAnswerBuffer;
+    }
+    this.saveCurrentAnswerSilently();
   },
 
   startQuestionFlow() {
@@ -724,7 +805,11 @@ window.AutoScribeExamSession = {
                    (this.activeExam.title && this.activeExam.title.toLowerCase().includes('math'));
 
     if (isMath) {
-      // Reset State for Mathematics Question Flow
+      // Reset Math Buffer & State for Mathematics Question Flow
+      this.mathAnswerBuffer = this.answers[question.id] || '';
+      const answerInput = document.getElementById('answerInput');
+      if (answerInput) answerInput.value = this.mathAnswerBuffer;
+
       this.reviewState = 'IDLE';
       this.answerMode = true;
       this.waitingForAnswer = true;
@@ -736,18 +821,29 @@ window.AutoScribeExamSession = {
       const qNumText = `Question ${this.currentIndex + 1} of ${this.activeExam.questions.length}.`;
       const fullText = `${qNumText} ${sectionInfo}${question.text}`;
 
-      // Read COMPLETE question TWICE, followed by prompt "Now, please say your answer."
-      const mathPrompt = `${fullText}. ... ${question.text}. ... Now, please say your answer.`;
-
       const saveStatus = document.getElementById('saveStatus');
-      if (saveStatus) saveStatus.textContent = `🎙️ MATH MODE: Dictating answer for Question ${this.currentIndex + 1}...`;
+      if (saveStatus) saveStatus.textContent = `🎙️ MATH MODE: Question ${this.currentIndex + 1} active...`;
 
-      AutoScribeSpeech.speak(mathPrompt, () => {
-        // ONLY AFTER prompt finishes speaking completely, start microphone listening!
-        AutoScribeSpeech.startListening(
-          (rawText, isFinal) => this.handleSubjectVoiceInput(rawText, isFinal),
-          (cmd, rawText) => this.handleSubjectVoiceInput(rawText, true)
-        );
+      // Sequential Chained TTS for Mathematics Flow
+      console.log("[AutoScribe Math] Question read 1 started");
+      AutoScribeSpeech.speak(fullText, () => {
+        console.log("[AutoScribe Math] Question read 1 finished");
+
+        console.log("[AutoScribe Math] Question read 2 started");
+        AutoScribeSpeech.speak(question.text, () => {
+          console.log("[AutoScribe Math] Question read 2 finished");
+
+          console.log("[AutoScribe Math] Answer prompt started");
+          AutoScribeSpeech.speak("Now, please say your answer.", () => {
+            console.log("[AutoScribe Math] Answer prompt finished");
+
+            console.log("[AutoScribe Math] Starting student microphone");
+            AutoScribeSpeech.startListening(
+              (rawText, isFinal) => this.handleMathVoiceDictation(rawText, isFinal),
+              (cmd, rawText) => this.handleMathVoiceDictation(rawText, true)
+            );
+          });
+        });
       });
       return;
     }
@@ -775,6 +871,7 @@ window.AutoScribeExamSession = {
       );
     });
   },
+
 
 
   startMathQuestionFlow() {
